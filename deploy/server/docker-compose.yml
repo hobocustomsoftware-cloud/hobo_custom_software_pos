@@ -1,0 +1,79 @@
+# HoBo POS - Server Production
+# Run from project root: docker-compose -f deploy/server/docker-compose.yml up -d
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hobo_pos}
+      POSTGRES_USER: ${POSTGRES_USER:-hobo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hobo}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ../../WeldingProject
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py seed_base_units &&
+             python manage.py collectstatic --noinput --clear &&
+             daphne -b 0.0.0.0 -p 8000 WeldingProject.asgi:application"
+    ports:
+      - "8000:8000"  # Expose backend API for mobile testing (Expo Go)
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
+      - DJANGO_DEBUG=False
+      - DEPLOYMENT_MODE=hosted
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      - CORS_ALLOW_ALL=False
+      - DATABASE_URL=postgres://${POSTGRES_USER:-hobo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hobo_pos}
+      - REDIS_URL=redis://redis:6379/0
+      - MACHINE_ID=${MACHINE_ID:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - AI_API_URL=${AI_API_URL:-}
+      - AI_MODEL=${AI_MODEL:-}
+    volumes:
+      - backend_static:/app/staticfiles
+      - backend_media:/app/media
+      - license_data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../../yp_posf
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    ports:
+      - "80:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_static:
+  backend_media:
+  license_data:

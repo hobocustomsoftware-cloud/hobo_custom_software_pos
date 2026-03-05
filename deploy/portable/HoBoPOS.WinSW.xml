@@ -1,0 +1,13 @@
+<!-- WinSW sample: wrap launch.bat as Windows service or run-once exe -->
+<!-- Download WinSW from https://github.com/winsw/winsw/releases -->
+<!-- Rename to HoBoPOS.exe and place next to this XML -->
+<service>
+  <id>HoBoPOS</id>
+  <name>HoBo POS</name>
+  <description>HoBo POS - Portable</description>
+  <executable>cmd</executable>
+  <arguments>/c launch.bat</arguments>
+  <workingdirectory>.</workingdirectory>
+  <icon>logo.ico</icon>
+  <log mode="roll"></log>
+</service>

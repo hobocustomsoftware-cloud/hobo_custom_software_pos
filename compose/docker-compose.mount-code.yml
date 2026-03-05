@@ -1,0 +1,6 @@
+# Optional: mount backend code for live edits. Use when bind mount works (e.g. Linux/WSL).
+# Run: docker compose -f docker-compose.yml -f docker-compose.mount-code.yml up -d
+services:
+  backend:
+    volumes:
+      - ./WeldingProject:/app

@@ -1,0 +1,23 @@
+# Prometheus alert rules for HoBo POS (SRE)
+# Use with Prometheus rule_files. Alertmanager နှင့် ချိတ်ဆက်ပြီး Email/SMS ပို့နိုင်သည်။
+
+groups:
+  - name: hobopos
+    rules:
+      - alert: HoBoPOSHigh5xx
+        expr: increase(hobopos_requests_5xx_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HoBo POS 5xx errors detected"
+          description: "5xx responses in the last 5 minutes. Check application logs."
+
+      - alert: HoBoPOSDown
+        expr: up{job="hobopos"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HoBo POS is down"
+          description: "Target {{ $labels.instance }} is not responding."

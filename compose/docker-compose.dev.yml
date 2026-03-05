@@ -1,0 +1,30 @@
+# Development - SQLite, runserver, no PostgreSQL
+# Usage: docker-compose -f docker-compose.dev.yml up
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./WeldingProject
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    environment:
+      - DJANGO_DEBUG=True
+      - CORS_ALLOW_ALL=True
+    volumes:
+      - ./WeldingProject:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: ./yp_posf
+      args:
+        VITE_API_URL: http://127.0.0.1:8000/api
+    ports:
+      - "80:80"
+    depends_on:
+      - backend

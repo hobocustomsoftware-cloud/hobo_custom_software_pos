@@ -1,0 +1,103 @@
+# HoBo POS - LIGHTWEIGHT DEMO (schema-based multi-tenancy)
+# Single backend for 20-30 demo shops; outlet_id isolation; wildcard subdomains (*.yourdemo.com)
+# Run from project root: docker compose -f server/docker-compose.yml -f server/docker-compose.demo.yml up -d --build
+# RAM: ~2GB total (Backend 512M, Postgres 384M, Redis 64M, Nginx 64M; no Celery)
+
+services:
+  redis:
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+    command: redis-server --maxmemory 48mb --maxmemory-policy allkeys-lru --appendonly yes
+
+  postgres:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: hobo-pos-backend
+    env_file: .env
+    environment:
+      TZ: Asia/Yangon
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,.yourdemo.com}
+      DEMO_MODE: "True"
+      DEPLOYMENT_MODE: hosted
+      CORS_ALLOW_ALL: "True"
+      DATABASE_URL: postgres://${POSTGRES_USER:-hobo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hobo_pos}
+      REDIS_URL: redis://redis:6379/0
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      GOOGLE_SHEETS_JSON: ${GOOGLE_SHEETS_JSON:-}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:-}
+      GOOGLE_SHEETS_SHEET_NAME: ${GOOGLE_SHEETS_SHEET_NAME:-Registrations}
+      MACHINE_ID: ${MACHINE_ID:-}
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py seed_base_units &&
+             python manage.py collectstatic --noinput --clear 2>/dev/null || true &&
+             exec gunicorn WeldingProject.wsgi:application
+             --bind 0.0.0.0:8000
+             --workers 2
+             --threads 2
+             --timeout 60
+             --max-requests 1000
+             --access-logfile -
+             --error-logfile -"
+    volumes:
+      - backend_static:/app/staticfiles
+      - backend_media:/app/media
+      - license_data:/app/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    environment:
+      TZ: Asia/Yangon
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d/demo-wildcard.conf:/etc/nginx/conf.d/default.conf:ro
+      - backend_static:/app/staticfiles:ro
+      - backend_media:/app/media:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+
+volumes:
+  postgres_data:
+  backend_static:
+  backend_media:
+  license_data:

@@ -1,0 +1,20 @@
+# Backend build (context .) - ignore large/unneeded paths
+.git
+.gitignore
+*.md
+.env
+.env.*
+venv
+welding_env
+node_modules
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/*.sqlite3
+yp_posf/dist
+yp_posf/.vite
+WeldingProject/static_frontend
+WeldingProject/staticfiles
+WeldingProject/media
+*.log
+.DS_Store

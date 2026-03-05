@@ -1,0 +1,157 @@
+# HoBo POS - STANDALONE server stack (file lives in compose/)
+# Run from repo root: docker compose -f compose/docker-compose.server.yml up -d --build
+# Or use ./run.bat / ./run.sh / make up (they pass --env-file .env from root).
+# Defaults below work without .env; for production set POSTGRES_PASSWORD and DJANGO_SECRET_KEY in root .env.
+# All services share the default compose network (backend, frontend, postgres, redis by name).
+
+services:
+  redis:
+    image: redis:7-alpine
+    environment:
+      TZ: Asia/Yangon
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    environment:
+      TZ: Asia/Yangon
+      POSTGRES_DB: ${POSTGRES_DB:-hobo_pos}
+      POSTGRES_USER: ${POSTGRES_USER:-hobo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hobo_pos_secret_change_in_production}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=C"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hobo} -d ${POSTGRES_DB:-hobo_pos}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ..
+      dockerfile: server/Dockerfile
+    image: hobo-pos-backend
+    env_file: ../.env
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    environment:
+      TZ: Asia/Yangon
+      DEMO_MODE: "False"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production-use-openssl-rand-hex-32}
+      DJANGO_DEBUG: "False"
+      DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1}
+      DEPLOYMENT_MODE: hosted
+      CORS_ALLOW_ALL: "False"
+      # DB: use service name "postgres" (do not set DATABASE_HOST=localhost in .env when using Docker)
+      DATABASE_HOST: postgres
+      # Format: postgres://[user]:[pass]@[host]:5432/[db_name]
+      DATABASE_URL: postgres://${POSTGRES_USER:-hobo}:${POSTGRES_PASSWORD:-hobo_pos_secret_change_in_production}@postgres:5432/${POSTGRES_DB:-hobo_pos}
+      REDIS_URL: redis://redis:6379/0
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      GOOGLE_SHEETS_CREDENTIALS_JSON: ${GOOGLE_SHEETS_JSON:-}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:-}
+      GOOGLE_SHEETS_SHEET_NAME: ${GOOGLE_SHEETS_SHEET_NAME:-Registrations}
+      MACHINE_ID: ${MACHINE_ID:-}
+    # Bind 0.0.0.0:8000 so Nginx (and host) can reach the backend; 127.0.0.1 would be unreachable from other containers.
+    command: >
+      sh -c "/app/init.sh && exec gunicorn WeldingProject.wsgi:application
+             --bind 0.0.0.0:8000
+             --workers 2 --threads 2 --timeout 60
+             --access-logfile - --error-logfile -"
+    volumes:
+      - backend_static:/app/staticfiles
+      - backend_media:/app/media
+      - license_data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    # Lenient healthcheck: backend runs init.sh (DB wait + migrate + collectstatic) before gunicorn, so it can take 1–2+ minutes.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/')"]
+      interval: 15s
+      timeout: 15s
+      retries: 12
+      start_period: 120s
+
+  celery:
+    image: hobo-pos-backend
+    env_file: ../.env
+    environment:
+      TZ: Asia/Yangon
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY}
+      DATABASE_HOST: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-hobo}:${POSTGRES_PASSWORD:-hobo_pos_secret_change_in_production}@postgres:5432/${POSTGRES_DB:-hobo_pos}
+      GOOGLE_SHEETS_JSON: ${GOOGLE_SHEETS_JSON:-}
+      REDIS_URL: redis://redis:6379/0
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      GOOGLE_SHEETS_CREDENTIALS_JSON: ${GOOGLE_SHEETS_JSON:-}
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:-}
+      GOOGLE_SHEETS_SHEET_NAME: ${GOOGLE_SHEETS_SHEET_NAME:-Registrations}
+    command: celery -A WeldingProject worker --loglevel=info
+    # Start once backend container is up; Celery will retry until app is ready (no block on backend health)
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../yp_posf
+      dockerfile: Dockerfile
+    image: hobo-pos-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    # Same network as backend/nginx/postgres/redis by default
+
+  nginx:
+    image: nginx:alpine
+    environment:
+      TZ: Asia/Yangon
+    volumes:
+      # From repo root: server/nginx (only default.conf to avoid duplicate upstream with demo-wildcard.conf)
+      - ../server/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../server/nginx/conf.d/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - backend_static:/app/staticfiles:ro
+      - backend_media:/app/media:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    # Start as soon as backend container is up; Nginx will 502 until backend is ready, then serve normally
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  backend_static:
+  backend_media:
+  license_data:

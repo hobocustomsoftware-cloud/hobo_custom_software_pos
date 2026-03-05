@@ -1,0 +1,9 @@
+# Hardware integration snippet: USB printers/scanners from backend
+# Use: docker compose -f docker-compose.yml -f docker-compose.hardware.yml up -d
+# Requires: host has /dev/bus/usb (Linux) or equivalent for your OS.
+
+services:
+  backend:
+    privileged: true
+    devices:
+      - /dev/bus/usb:/dev/bus/usb

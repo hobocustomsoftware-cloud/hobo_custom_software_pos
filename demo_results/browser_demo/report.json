@@ -1,0 +1,142 @@
+{
+  "startedAt": "2026-03-04T08:41:38.272Z",
+  "baseURL": "http://127.0.0.1:5173",
+  "steps": [
+    "1. Open app (login)",
+    "2. Fill login and submit",
+    "3. After login (setup-wizard or dashboard)",
+    "4. Complete setup wizard (if shown)",
+    "5. Dashboard layout",
+    "6. POS page (layout & products)",
+    "6b. Users (staff) page",
+    "7. Settings page",
+    "8. Reports page (sales summary)"
+  ],
+  "screenshots": [
+    {
+      "name": "01_login_page",
+      "file": "/media/htoo-myat-eain/New Volume/hobo_license_pos/demo_results/browser_demo/01_login_page.png"
+    },
+    {
+      "name": "02_after_login_click",
+      "file": "/media/htoo-myat-eain/New Volume/hobo_license_pos/demo_results/browser_demo/02_after_login_click.png"
+    },
+    {
+      "name": "05_dashboard",
+      "file": "/media/htoo-myat-eain/New Volume/hobo_license_pos/demo_results/browser_demo/05_dashboard.png"
+    },
+    {
+      "name": "06_pos_page",
+      "file": "/media/htoo-myat-eain/New Volume/hobo_license_pos/demo_results/browser_demo/06_pos_page.png"
+    },
+    {
+      "name": "06b_users_staff",
+      "file": "/media/htoo-myat-eain/New Volume/hobo_license_pos/demo_results/browser_demo/06b_users_staff.png"
+    },
+    {
+      "name": "07_settings",
+      "file": "/media/htoo-myat-eain/New Volume/hobo_license_pos/demo_results/browser_demo/07_settings.png"
+    },
+    {
+      "name": "08_reports_sales_summary",
+      "file": "/media/htoo-myat-eain/New Volume/hobo_license_pos/demo_results/browser_demo/08_reports_sales_summary.png"
+    }
+  ],
+  "consoleErrors": [
+    {
+      "type": "error",
+      "text": "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+      "url": "http://127.0.0.1:5173/api/core/auth/login/"
+    },
+    {
+      "type": "error",
+      "text": "Login Error: {detail: No active account found with this phone number.}",
+      "url": "http://127.0.0.1:5173/src/stores/auth.js"
+    }
+  ],
+  "consoleWarnings": [],
+  "failedRequests": [],
+  "stepTimings": [
+    {
+      "step": "1. Open app (login)",
+      "ms": 3642
+    },
+    {
+      "step": "2. Fill login and submit",
+      "ms": 2629
+    },
+    {
+      "step": "3. After login (setup-wizard or dashboard)",
+      "ms": 14
+    },
+    {
+      "step": "4. Complete setup wizard (if shown)",
+      "ms": 0
+    },
+    {
+      "step": "5. Dashboard layout",
+      "ms": 2286
+    },
+    {
+      "step": "6. POS page (layout & products)",
+      "ms": 2367
+    },
+    {
+      "step": "6b. Users (staff) page",
+      "ms": 2256
+    },
+    {
+      "step": "7. Settings page",
+      "ms": 1908
+    },
+    {
+      "step": "8. Reports page (sales summary)",
+      "ms": 2133
+    }
+  ],
+  "slowSteps": [],
+  "layoutChecks": [
+    {
+      "where": "after login",
+      "check": "redirect",
+      "ok": false,
+      "note": "ဤအကောင့်မရှိပါ သို့မဟုတ် စကားဝှက်မှားနေပါသည်။ စာရင်းမသွင်းရသေးရင် အောက်က စာရင်းသွင်းရန် နှိပ်ပါ။"
+    },
+    {
+      "where": "dashboard",
+      "check": "body has content",
+      "ok": true
+    },
+    {
+      "where": "POS",
+      "check": "ticket or cart area",
+      "ok": false
+    },
+    {
+      "where": "POS",
+      "check": "product area",
+      "ok": false
+    },
+    {
+      "where": "users (staff)",
+      "check": "users/staff content",
+      "ok": false
+    },
+    {
+      "where": "users (staff)",
+      "check": "list or add button",
+      "ok": false
+    },
+    {
+      "where": "settings",
+      "check": "settings content",
+      "ok": false
+    },
+    {
+      "where": "reports/sales-summary",
+      "check": "page loaded",
+      "ok": false
+    }
+  ],
+  "finishedAt": "2026-03-04T08:41:55.509Z"
+}

@@ -1,0 +1,185 @@
+# HoBo POS - Main Docker stack (PostgreSQL + Redis + Backend + Frontend)
+# ပုံမှန် စတင်ရန် (repo root မှ): docker compose -f compose/docker-compose.yml up -d --build
+# Backend/Login ကုဒ်ပြင်ပြီးရင် အသစ်သုံးဖို့: up -d --build ပြန်လုပ်ပါ (image ပြန် build ဖြစ်မယ်)
+# Design/UI ပြင်ပြီးရင် မပြောင်းရင်: ./scripts/rebuild_ui_docker.sh ပြေးပြီး browser Hard Refresh။ အသေးစိတ် docs/UI_DESIGN_REFRESH.md ကြည့်ပါ။
+# "postgres: name resolution" error ဆိုရင်: container တွေကို ပြန် ဖန်တီးပါ (အတူ network): docker compose -p hobo -f compose/docker-compose.yml down && docker compose -p hobo -f compose/docker-compose.yml up -d --force-recreate
+# Port များ ယူပြီးသား ဆိုရင်: .env မှာ FRONTEND_PORT=9999, BACKEND_PORT=8002, POSTGRES_PORT=5435, REDIS_PORT=6381 ထည့်ပါ။ (default: Frontend 8888, Backend 8001, Postgres 5434, Redis 6380)
+# Frontend port ယူပြီးသား ဆိုရင်: .env မှာ FRONTEND_PORT=9999 စသည် ထည့်ပါ။ (default: 8888)
+# (သို့) scripts\docker_up.bat  (Windows)
+# .env မလိုပါ – default: POSTGRES_PASSWORD=hobo_secret, REDIS_PASSWORD=hobo_redis
+# စကားဝှက်အမှား ဆိုရင်: docker compose -f compose/docker-compose.yml down -v ပြီး ထပ် up --build ပါ။
+# ရှိနေတဲ့ Docker အကုန်ဖျက်ပြီး အသစ်တင်: down -v && up -d --build (သို့) docs/guides/DOCKER_500_REGISTER.md ကြည့်ပါ။
+#
+# Localhost: Frontend=8888 (http://localhost:8888/app/), Backend=8001 host port (API at /api/ via frontend proxy)
+# 502 Bad Gateway: Backend မတက်သေးရင် ဖြစ်တတ်သည်။ docker compose -f compose/docker-compose.yml ps && docker compose -f compose/docker-compose.yml logs backend
+# Health: GET /health/ (200), GET /health/ready/ (200 or 503), Backend 404/405/500 custom handlers return JSON for /api/*
+# Exchange rate: Backend scrapes CBM (beautifulsoup4); Settings + Sidebar for manual rate; DYNAMIC_USD product prices sync on rate change.
+# E2E: scripts/run_e2e_docker.sh (from repo root)
+
+services:
+  redis:
+    image: redis:7-alpine
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-hobo_redis}
+    command: sh -c "redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    # Security: Don't expose ports in production
+    # ports:
+    #   - "6379:6379"  # Comment out in production, use internal network only
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hobo_pos}
+      POSTGRES_USER: ${POSTGRES_USER:-hobo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hobo_secret}
+      # Performance tuning
+      POSTGRES_INITDB_ARGS: "-E UTF8 --locale=en_US.UTF-8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../deploy/backup:/backups
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hobo}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    # Security: Don't expose ports in production
+    # ports:
+    #   - "5432:5432"  # Comment out in production, use internal network only
+
+  backend:
+    build:
+      context: ..
+      dockerfile: WeldingProject/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_BASE: ${VITE_BASE:-/app/}
+    command: >
+      sh -c "
+        echo '⏳ Waiting for postgres to be resolvable...' &&
+        for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+          if python -c \"import socket; socket.gethostbyname('postgres')\" 2>/dev/null; then echo '✅ postgres resolved'; break; fi;
+          echo \"  attempt $$i/20\"; sleep 3;
+        done &&
+        (mkdir -p /app/static_frontend 2>/dev/null || true) &&
+        (if [ -d /frontend_dist ] && [ \"\$(ls -A /frontend_dist 2>/dev/null)\" ]; then
+          echo '🔄 Using host frontend_dist...' && cp -r /frontend_dist/* /app/static_frontend/;
+        elif [ -d /app/frontend_built ] && [ \"\$(ls -A /app/frontend_built 2>/dev/null)\" ]; then
+          echo '🔄 Using image frontend_built...' && cp -r /app/frontend_built/* /app/static_frontend/;
+        fi) &&
+        python manage.py migrate --noinput &&
+        python manage.py seed_base_units &&
+        python manage.py collectstatic --noinput --clear &&
+        exec daphne -b 0.0.0.0 -p 8000 WeldingProject.asgi:application
+      "
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-change-me-in-production}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      # Login 500 စစ်တဲ့အခါ အမှန်တဲ့ error ပြရန် (production မှာ ပိတ်ပါ)
+      - HOBOPOS_SHOW_LOGIN_ERROR=${HOBOPOS_SHOW_LOGIN_ERROR:-true}
+      - DEPLOYMENT_MODE=${DEPLOYMENT_MODE:-hosted}
+      # Skip license check in dev so /api/staff/items/ etc. work (set false in production if using license)
+      - SKIP_LICENSE=${SKIP_LICENSE:-true}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,backend,frontend}
+      - CORS_ALLOW_ALL=${CORS_ALLOW_ALL:-False}
+      - CORS_EXTRA_ORIGINS=${CORS_EXTRA_ORIGINS:-http://frontend,http://frontend:80}
+      - DATABASE_URL=postgres://${POSTGRES_USER:-hobo}:${POSTGRES_PASSWORD:-hobo_secret}@postgres:5432/${POSTGRES_DB:-hobo_pos}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:-hobo_redis}@redis:6379/0
+      # MACHINE_ID: Optional - empty ဆိုရင် data/machine_id (volume) မှ auto generate
+      - MACHINE_ID=${MACHINE_ID:-}
+      # Marketing: Register လုပ်တိုင်း Telegram + Google Sheet ပို့မယ် (optional)
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
+      - GOOGLE_SHEETS_SPREADSHEET_ID=${GOOGLE_SHEETS_SPREADSHEET_ID:-}
+      - GOOGLE_SHEETS_SHEET_NAME=${GOOGLE_SHEETS_SHEET_NAME:-Registrations}
+      - GOOGLE_SHEETS_CREDENTIALS_JSON=${GOOGLE_SHEETS_CREDENTIALS_JSON:-}
+      - GOOGLE_SHEETS_JSON=${GOOGLE_SHEETS_JSON:-}
+    volumes:
+      # /app = image content (no bind mount). For live backend edits use: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+      - backend_static_frontend:/app/static_frontend
+      - media_volume:/app/media
+      - license_data:/app/data
+      # Optional: host yp_posf/dist ရှိရင် ဒါကို သုံးမယ်၊ မရှိရင် image ထဲက frontend_built သုံးမယ်
+      - ../yp_posf/dist:/frontend_dist:ro
+    ports:
+      - "${BACKEND_PORT:-8001}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health/').raise_for_status()"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+      start_period: 180s
+
+  frontend:
+    build:
+      context: ../yp_posf
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api}
+        VITE_BASE: ${VITE_BASE:-/app/}
+    ports:
+      - "${FRONTEND_PORT:-8888}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/ -o /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Temporary service: run 31-screenshot Playwright audit (Loyverse flow). Run: scripts/run_e2e_docker.sh
+  e2e-tester:
+    image: mcr.microsoft.com/playwright:v1.40.0-focal
+    working_dir: /workspace/yp_posf
+    environment:
+      PLAYWRIGHT_BASE_URL: http://frontend:80
+      PLAYWRIGHT_LOGIN_USER: ${PLAYWRIGHT_LOGIN_USER:-09999999999}
+      PLAYWRIGHT_LOGIN_PASS: ${PLAYWRIGHT_LOGIN_PASS:-demo123}
+    volumes:
+      - ..:/workspace
+      - ../demo_results:/workspace/demo_results
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    profiles:
+      - e2e
+    command: >
+      sh -c "
+        cd /workspace/yp_posf &&
+        (test -d node_modules && test -f package.json) || (npm ci --legacy-peer-deps || npm install --legacy-peer-deps) &&
+        npx playwright install chromium &&
+        mkdir -p /workspace/demo_results/feature_verification &&
+        npx playwright test e2e/feature_verification.spec.js --project=chromium
+      "
+
+# Default network is created per project (e.g. compose_default). No custom name to avoid "network exists but was not created for project".
+networks:
+  default: {}
+
+volumes:
+  postgres_data:
+  static_volume:
+  backend_static_frontend:
+  media_volume:
+  license_data:

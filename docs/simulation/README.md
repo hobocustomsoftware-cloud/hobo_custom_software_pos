@@ -1,0 +1,7 @@
+# Simulation
+
+Simulation guides, status, and related docs.
+
+- `SIMULATION_GUIDE.md`, `SIMULATION_STATUS.md`, `README_SIMULATION.md`
+- `HAPPY_PATH_OPEN_TO_CLOSE_DAY.md`, `FEATURE_AND_SYSTEM_INVENTORY_REPORT.md`
+- `DOCKER_SIMULATION_GUIDE.md`

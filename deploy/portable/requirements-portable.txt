@@ -1,0 +1,5 @@
+# HoBo POS - Portable build (WSGI + Waitress)
+# Same as main but add Waitress; Channels/Daphne optional (not used in WSGI mode)
+
+-r ../../../WeldingProject/requirements.txt
+waitress>=3.0.0

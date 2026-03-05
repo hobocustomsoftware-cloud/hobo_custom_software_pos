@@ -1,0 +1,17 @@
+# Single-Tenancy Multi-Outlet Demo — Pharmacy (ဆေးဆိုင်)
+# Run these in terminal (from project root, with Django available: venv activated or docker exec).
+
+# Step 1: Cleanup — fresh start
+python manage.py flush --noinput
+
+# Step 2 & 3 & 4: Setup (1 Main Warehouse + Branch A, Branch B) + Pharmacy inventory + Verification table
+python manage.py run_multi_outlet_demo --shop pharmacy
+
+# Expected output includes a table like:
+# | Product     | Location              | Stock (Base Unit) | Unit Cost |
+# |-------------|-----------------------|-------------------|-----------|
+# | Amoxicillin | Main Warehouse - ...  | 80 Strip          | 500       |
+# | Amoxicillin | Branch A - Shopfloor | 20 Strip          | 500       |
+
+# When ready for Mobile Shop, say "Next" and run:
+# python manage.py run_multi_outlet_demo --shop mobile
