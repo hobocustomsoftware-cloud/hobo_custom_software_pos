@@ -11,6 +11,7 @@ class Outlet(models.Model):
     Outlet (branch) for multi-outlet enterprise. Strict data isolation.
     Each outlet has two stock locations: Warehouse (bulk) and Shopfloor (sales).
     """
+    shop_settings = models.ForeignKey(ShopSettings, on_delete=models.CASCADE, related_name='outlets', null=True)
     name = models.CharField(max_length=200, verbose_name="Outlet Name")
     address = models.TextField(blank=True, null=True, verbose_name="Address")
     phone = models.CharField(max_length=50, blank=True, null=True, verbose_name="Phone")
@@ -178,6 +179,7 @@ CURRENCY_CHOICES = (
 
 class ShopSettings(models.Model):
     """ဆိုင်ချိန်ညှိချက် - Logo နှင့် ဆိုင်အမည် (တစ်ဆိုင်လျှင် တစ်ခု). trial_start_date = 30-day trial for multi-instance hosting."""
+    owner = models.OneToOneField(User, on_delete=models.CASCADE, related_name='shop_settings', null=True)
     shop_name = models.CharField(max_length=200, default='HoBo POS')
     logo = models.ImageField(upload_to='shop/', blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -205,16 +207,23 @@ class ShopSettings(models.Model):
         verbose_name = 'ဆိုင်ချိန်ညှိချက်'
         verbose_name_plural = 'ဆိုင်ချိန်ညှိချက်များ'
 
-    @classmethod
-    def get_settings(cls):
-        from django.utils import timezone
-        # Multi-instance: trial_start_date set on first create (30-day trial)
-        obj, _ = cls.objects.get_or_create(
-            pk=1,
-            defaults={'shop_name': 'HoBo POS', 'trial_start_date': timezone.now()}
-        )
-        return obj
+    # @classmethod
+    # def get_settings(cls):
+    #     from django.utils import timezone
+    #     # Multi-instance: trial_start_date set on first create (30-day trial)
+    #     obj, _ = cls.objects.get_or_create(
+    #         pk=1,
+    #         defaults={'shop_name': 'HoBo POS', 'trial_start_date': timezone.now()}
+    #     )
+    #     return obj
 
+    @classmethod
+    def get_settings(cls, user=None):
+        if user and user.is_authenticated:
+            # လက်ရှိ User ရဲ့ သီးသန့် Settings ကို ယူမယ်
+            obj, _ = cls.objects.get_or_create(owner=user)
+            return obj
+        return cls.objects.filter(pk=1).first() # Fallback
 
 class AuditLog(models.Model):
     """RBAC audit: every Sale, Stock Transfer, Approval records User_ID (and outlet) to prevent theft/errors."""
