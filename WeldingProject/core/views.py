@@ -40,6 +40,27 @@ class RegisterView(generics.CreateAPIView):
         except Exception as e:
             logger.exception("Register failed: %s", e)
             raise
+            from .models import ShopSettings, Outlet
+        shop_name = (request.data.get('shop_name') or '').strip()
+        
+        # ၁။ ပင်မ ဆိုင် settings ကို အသစ်ဆောက်မယ်
+        new_shop = ShopSettings.objects.create(
+            shop_name=shop_name or f"{user.username}'s Shop",
+            setup_wizard_done=False  # Client ကိုယ်တိုင် ပြန်ပြင်ခိုင်းဖို့
+        )
+
+        # ၂။ ပင်မ ဆိုင်ခွဲ (Outlet) ကို တစ်ခါတည်း ဆောက်ပေးမယ်
+        # ဒါမှ Location တွေ ရောမနေမှာပါ
+        Outlet.objects.create(
+            name="Main Branch",
+            shop_settings=new_shop,
+            is_main_branch=True,
+            owner=user
+        )
+        
+        # User နဲ့ Shop ကို ချိတ်ပေးထားဖို့ လိုပါတယ် (သင့် Model မှာ shop field ပါရင်)
+        user.shop = new_shop
+        user.save()
         shop_name = (request.data.get('shop_name') or '').strip()
         # Marketing: Telegram + Google Sheet. Run sync in request so it works without Celery worker.
         try:
