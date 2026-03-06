@@ -74,6 +74,11 @@ class CategoryViewSet(viewsets.ModelViewSet):
         if self.action in ('list', 'retrieve'):
             return [IsStaffOrHigher()]  # Role ရှိသူအားလုံး categories ကြည့်နိုင် (POS dropdown)
         return [IsInventoryManagerOrHigher()]
+        
+    def get_queryset(self):
+        # Global query အစား outlet filter သုံးပါ
+        from core.outlet_utils import filter_queryset_by_outlet
+        return filter_queryset_by_outlet(Category.objects.all().order_by('name'), self.request)
 
 # ----------------------------------------------------
 # 2. Product Views
@@ -147,6 +152,13 @@ class ProductViewSet(viewsets.ModelViewSet):
     search_fields = ['name', 'sku', 'model_no', 'category__name']
     ordering_fields = ['name', 'sku', 'retail_price', 'cost_price', 'created_at']
     ordering = ['name']
+
+    def get_queryset(self):
+            from core.outlet_utils import filter_queryset_by_outlet
+            return filter_queryset_by_outlet(
+                Product.objects.all().select_related('category', 'base_unit').order_by('name'), 
+                self.request
+            )
 
 
 class ProductLookupBySkuView(APIView):
@@ -1831,15 +1843,20 @@ class LocationViewSet(viewsets.ModelViewSet):
     ordering = ['name']
     filterset_fields = ['site', 'outlet', 'location_type', 'is_sale_location']
 
+    # def get_queryset(self):
+    #     qs = Location.objects.all().order_by('name').select_related('site', 'outlet').prefetch_related('staff_assigned')
+    #     from core.outlet_utils import get_request_outlet_id, is_owner
+    #     outlet_id = get_request_outlet_id(self.request)
+    #     if outlet_id is not None:
+    #         qs = qs.filter(outlet_id=outlet_id)
+    #     elif not is_owner(self.request.user):
+    #         qs = qs.none()
+    #     return qs
     def get_queryset(self):
-        qs = Location.objects.all().order_by('name').select_related('site', 'outlet').prefetch_related('staff_assigned')
-        from core.outlet_utils import get_request_outlet_id, is_owner
-        outlet_id = get_request_outlet_id(self.request)
-        if outlet_id is not None:
-            qs = qs.filter(outlet_id=outlet_id)
-        elif not is_owner(self.request.user):
-            qs = qs.none()
-        return qs
+        # Global query အစား လက်ရှိ Outlet နဲ့ပဲ filter လုပ်ပါ
+        from core.outlet_utils import filter_queryset_by_outlet
+        qs = Location.objects.all().order_by('name').select_related('site', 'outlet')
+        return filter_queryset_by_outlet(qs, self.request)
 
 
 class LocationListAPIView(generics.ListAPIView):
@@ -1847,17 +1864,25 @@ class LocationListAPIView(generics.ListAPIView):
     serializer_class = LocationSerializer
     permission_classes = [IsCashierOrHigher]
 
-    def get_queryset(self):
+    # def get_queryset(self):
+    #     user = self.request.user
+    #     from core.outlet_utils import is_owner
+    #     if is_owner(user):
+    #         return Location.objects.all().select_related('outlet', 'site').order_by('name')
+    #     outlet_id = getattr(user, 'primary_outlet_id', None)
+    #     if outlet_id is not None:
+    #         return Location.objects.filter(outlet_id=outlet_id).select_related('outlet', 'site').order_by('name')
+    #     if hasattr(user, 'assigned_locations'):
+    #         return user.assigned_locations.all().select_related('outlet', 'site').order_by('name')
+    #     return Location.objects.none()
+
+    ef get_queryset(self):
         user = self.request.user
-        from core.outlet_utils import is_owner
-        if is_owner(user):
-            return Location.objects.all().select_related('outlet', 'site').order_by('name')
-        outlet_id = getattr(user, 'primary_outlet_id', None)
-        if outlet_id is not None:
-            return Location.objects.filter(outlet_id=outlet_id).select_related('outlet', 'site').order_by('name')
-        if hasattr(user, 'assigned_locations'):
-            return user.assigned_locations.all().select_related('outlet', 'site').order_by('name')
-        return Location.objects.none()
+        from core.outlet_utils import is_owner, filter_queryset_by_outlet
+        
+        # Owner မဟုတ်ရင် သူ့ရဲ့ primary_outlet က data ပဲ မြင်ရမယ်
+        qs = Location.objects.all().select_related('outlet', 'site').order_by('name')
+        return filter_queryset_by_outlet(qs, self.request)
 
 class StaffSalesSummaryView(APIView):
     permission_classes = [IsCashierOrHigher]
